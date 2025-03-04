@@ -209,6 +209,7 @@ export type Models = {
     [ModelProviderName.LLAMACLOUD]: Model;
     [ModelProviderName.TOGETHER]: Model;
     [ModelProviderName.LLAMALOCAL]: Model;
+    [ModelProviderName.LMSTUDIO]: Model;
     [ModelProviderName.GOOGLE]: Model;
     [ModelProviderName.MISTRAL]: Model;
     [ModelProviderName.CLAUDE_VERTEX]: Model;
@@ -232,6 +233,8 @@ export type Models = {
     [ModelProviderName.INFERA]: Model;
     [ModelProviderName.BEDROCK]: Model;
     [ModelProviderName.ATOMA]: Model;
+    [ModelProviderName.SECRETAI]: Model;
+    [ModelProviderName.NEARAI]: Model;
 };
 
 /**
@@ -246,6 +249,7 @@ export enum ModelProviderName {
     LLAMACLOUD = "llama_cloud",
     TOGETHER = "together",
     LLAMALOCAL = "llama_local",
+    LMSTUDIO = "lmstudio",
     GOOGLE = "google",
     MISTRAL = "mistral",
     CLAUDE_VERTEX = "claude_vertex",
@@ -270,6 +274,8 @@ export enum ModelProviderName {
     INFERA = "infera",
     BEDROCK = "bedrock",
     ATOMA = "atoma",
+    SECRETAI = "secret_ai",
+    NEARAI = "nearai",
 }
 
 /**
@@ -606,14 +612,36 @@ export type Media = {
 };
 
 /**
- * Client interface for platform connections
+ * Client instance
  */
-export type Client = {
-    /** Start client connection */
-    start: (runtime: IAgentRuntime) => Promise<unknown>;
+export type ClientInstance = {
+    /** Client name */
+    // name: string;
 
     /** Stop client connection */
     stop: (runtime: IAgentRuntime) => Promise<unknown>;
+};
+
+/**
+ * Client interface for platform connections
+ */
+export type Client = {
+    /** Client name */
+    name: string;
+
+    /** Client configuration */
+    config?: { [key: string]: any };
+
+    /** Start client connection */
+    start: (runtime: IAgentRuntime) => Promise<ClientInstance>;
+};
+
+/**
+ * Database adapter initialization
+ */
+export type Adapter = {
+    /** Initialize the adapter */
+    init: (runtime: IAgentRuntime) => IDatabaseAdapter & IDatabaseCacheAdapter;
 };
 
 /**
@@ -622,6 +650,12 @@ export type Client = {
 export type Plugin = {
     /** Plugin name */
     name: string;
+
+    /** Plugin npm name */
+    npmName?: string;
+
+    /** Plugin configuration */
+    config?: { [key: string]: any };
 
     /** Plugin description */
     description: string;
@@ -640,25 +674,13 @@ export type Plugin = {
 
     /** Optional clients */
     clients?: Client[];
-};
 
-/**
- * Available client platforms
- */
-export enum Clients {
-    ALEXA= "alexa",
-    DISCORD = "discord",
-    DIRECT = "direct",
-    TWITTER = "twitter",
-    TELEGRAM = "telegram",
-    FARCASTER = "farcaster",
-    LENS = "lens",
-    AUTO = "auto",
-    SLACK = "slack",
-    GITHUB = "github",
-    INSTAGRAM = "instagram",
-    SIMSAI = "simsai"
-}
+    /** Optional adapters */
+    adapters?: Adapter[];
+
+    /** Optional post charactor processor handler */
+    handlePostCharacterLoaded?: (char: Character) => Promise<Character>;
+};
 
 export interface IAgentConfig {
     [key: string]: string;
@@ -691,7 +713,7 @@ export type TelemetrySettings = {
 
 export interface ModelConfiguration {
     temperature?: number;
-    max_response_length?: number;
+    maxOutputTokens?: number;
     frequency_penalty?: number;
     presence_penalty?: number;
     maxInputTokens?: number;
@@ -770,6 +792,7 @@ export type Character = {
         jeeterInteractionTemplate?: string;
         jeeterMessageHandlerTemplate?: string;
         jeeterShouldRespondTemplate?: string;
+        devaPostTemplate?: string;
     };
 
     /** Character biography */
@@ -791,13 +814,13 @@ export type Character = {
     adjectives: string[];
 
     /** Optional knowledge base */
-    knowledge?: (string | { path: string; shared?: boolean })[];
-
-    /** Supported client platforms */
-    clients: Clients[];
+    knowledge?: (string | { path: string; shared?: boolean } | { directory: string; shared?: boolean })[];
 
     /** Available plugins */
     plugins: Plugin[];
+
+    /** Character Processor Plugins */
+    postProcessors?: Pick<Plugin, 'name' | 'description' | 'handlePostCharacterLoaded'>[];
 
     /** Optional configuration */
     settings?: {
@@ -1168,6 +1191,7 @@ export interface IMemoryManager {
         content: string,
     ): Promise<{ embedding: number[]; levenshtein_score: number }[]>;
 
+    getMemoriesByIds(ids: UUID[]): Promise<Memory[]>;
     getMemoryById(id: UUID): Promise<Memory | null>;
     getMemoriesByRoomIds(params: {
         roomIds: UUID[];
@@ -1288,11 +1312,9 @@ export interface IAgentRuntime {
     cacheManager: ICacheManager;
 
     services: Map<ServiceType, Service>;
-    // any could be EventEmitter
-    // but I think the real solution is forthcoming as a base client interface
-    clients: Record<string, any>;
+    clients: ClientInstance[];
 
-    verifiableInferenceAdapter?: IVerifiableInferenceAdapter | null;
+    // verifiableInferenceAdapter?: IVerifiableInferenceAdapter | null;
 
     initialize(): Promise<void>;
 
@@ -1518,6 +1540,7 @@ export enum ServiceType {
     GOPLUS_SECURITY = "goplus_security",
     WEB_SEARCH = "web_search",
     EMAIL_AUTOMATION = "email_automation",
+    NKN_CLIENT_SERVICE = "nkn_client_service",
 }
 
 export enum LoggingLevel {
@@ -1564,69 +1587,6 @@ export interface ISlackService extends Service {
     client: any;
 }
 
-/**
- * Available verifiable inference providers
- */
-export enum VerifiableInferenceProvider {
-    RECLAIM = "reclaim",
-    OPACITY = "opacity",
-    PRIMUS = "primus",
-}
-
-/**
- * Options for verifiable inference
- */
-export interface VerifiableInferenceOptions {
-    /** Custom endpoint URL */
-    endpoint?: string;
-    /** Custom headers */
-    headers?: Record<string, string>;
-    /** Provider-specific options */
-    providerOptions?: Record<string, unknown>;
-}
-
-/**
- * Result of a verifiable inference request
- */
-export interface VerifiableInferenceResult {
-    /** Generated text */
-    text: string;
-    /** Proof */
-    proof: any;
-    /** Proof id */
-    id?: string;
-    /** Provider information */
-    provider: VerifiableInferenceProvider;
-    /** Timestamp */
-    timestamp: number;
-}
-
-/**
- * Interface for verifiable inference adapters
- */
-export interface IVerifiableInferenceAdapter {
-    options: any;
-    /**
-     * Generate text with verifiable proof
-     * @param context The input text/prompt
-     * @param modelClass The model class/name to use
-     * @param options Additional provider-specific options
-     * @returns Promise containing the generated text and proof data
-     */
-    generateText(
-        context: string,
-        modelClass: string,
-        options?: VerifiableInferenceOptions,
-    ): Promise<VerifiableInferenceResult>;
-
-    /**
-     * Verify the proof of a generated response
-     * @param result The result containing response and proof to verify
-     * @returns Promise indicating if the proof is valid
-     */
-    verifyProof(result: VerifiableInferenceResult): Promise<boolean>;
-}
-
 export enum TokenizerType {
     Auto = "auto",
     TikToken = "tiktoken",
@@ -1642,7 +1602,6 @@ export enum ActionTimelineType {
     ForYou = "foryou",
     Following = "following",
 }
-
 export enum KnowledgeScope {
     SHARED = "shared",
     PRIVATE = "private",
